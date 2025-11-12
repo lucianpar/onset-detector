@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Onset Detector</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 20px;
+        }
+        
+        .upload-area:hover {
+            background: #f8f9ff;
+            border-color: #764ba2;
+        }
+        
+        .upload-area.dragging {
+            background: #f0f4ff;
+            border-color: #764ba2;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        label {
+            color: #555;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 15px;
+            background: #f0f4ff;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            color: #555;
+            font-size: 14px;
+        }
+        
+        .results {
+            margin-top: 30px;
+        }
+        
+        .results h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .onset-list {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .onset-item {
+            padding: 12px;
+            background: white;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        
+        .onset-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .onset-label {
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .onset-value {
+            color: #333;
+            font-weight: 600;
+        }
+        
+        .export-btn {
+            margin-top: 15px;
+            width: 100%;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Audio Onset Detector</h1>
+        <p class="subtitle">Upload an audio file to detect transient events and onsets</p>
+        
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📁</div>
+            <p><strong>Click to upload</strong> or drag and drop</p>
+            <p style="color: #999; font-size: 12px; margin-top: 5px;">MP3 or WAV files</p>
+            <input type="file" id="fileInput" accept=".mp3,.wav,audio/mpeg,audio/wav">
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="threshold">Sensitivity: <span id="thresholdValue">1.5</span></label>
+                <input type="range" id="threshold" min="0.5" max="3" step="0.1" value="1.5">
+            </div>
+            <div class="control-group">
+                <label for="minGap">Min Gap (ms): <span id="minGapValue">50</span></label>
+                <input type="range" id="minGap" min="10" max="200" step="10" value="50">
+            </div>
+        </div>
+        
+        <button id="analyzeBtn" disabled>Analyze Audio</button>
+        
+        <div id="status" class="status hidden"></div>
+        
+        <div id="results" class="results hidden">
+            <h2>Detected Onsets (<span id="onsetCount">0</span>)</h2>
+            <div id="onsetList" class="onset-list"></div>
+            <button id="exportBtn" class="export-btn">Export as JSON</button>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const status = document.getElementById('status');
+        const results = document.getElementById('results');
+        const onsetList = document.getElementById('onsetList');
+        const onsetCount = document.getElementById('onsetCount');
+        const exportBtn = document.getElementById('exportBtn');
+        const thresholdSlider = document.getElementById('threshold');
+        const minGapSlider = document.getElementById('minGap');
+        const thresholdValue = document.getElementById('thresholdValue');
+        const minGapValue = document.getElementById('minGapValue');
+        
+        let audioBuffer = null;
+        let detectedOnsets = [];
+        
+        // Update slider values
+        thresholdSlider.addEventListener('input', (e) => {
+            thresholdValue.textContent = e.target.value;
+        });
+        
+        minGapSlider.addEventListener('input', (e) => {
+            minGapValue.textContent = e.target.value;
+        });
+        
+        // File upload handlers
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragging');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragging');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragging');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        async function handleFile(file) {
+            if (!file.type.match('audio.*')) {
+                showStatus('Please select an audio file (MP3 or WAV)', 'error');
+                return;
+            }
+            
+            showStatus('Loading audio file...', 'info');
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                showStatus(`Audio loaded: ${file.name} (${audioBuffer.duration.toFixed(2)}s)`, 'success');
+                analyzeBtn.disabled = false;
+                results.classList.add('hidden');
+            } catch (error) {
+                showStatus('Error loading audio file: ' + error.message, 'error');
+            }
+        }
+        
+        analyzeBtn.addEventListener('click', analyzeAudio);
+        
+        function analyzeAudio() {
+            if (!audioBuffer) return;
+            
+            showStatus('Analyzing audio for onsets...', 'info');
+            analyzeBtn.disabled = true;
+            
+            setTimeout(() => {
+                try {
+                    const threshold = parseFloat(thresholdSlider.value);
+                    const minGap = parseInt(minGapSlider.value) / 1000; // Convert to seconds
+                    
+                    detectedOnsets = detectOnsets(audioBuffer, threshold, minGap);
+                    
+                    displayResults(detectedOnsets);
+                    showStatus(`Analysis complete! Found ${detectedOnsets.length} onsets`, 'success');
+                    results.classList.remove('hidden');
+                } catch (error) {
+                    showStatus('Error analyzing audio: ' + error.message, 'error');
+                }
+                
+                analyzeBtn.disabled = false;
+            }, 100);
+        }
+        
+        function detectOnsets(buffer, threshold, minGap) {
+            const channelData = buffer.getChannelData(0);
+            const sampleRate = buffer.sampleRate;
+            const hopSize = 512;
+            const windowSize = 2048;
+            
+            // Calculate spectral flux
+            const flux = [];
+            for (let i = 0; i < channelData.length - windowSize; i += hopSize) {
+                const window = channelData.slice(i, i + windowSize);
+                const energy = window.reduce((sum, val) => sum + val * val, 0) / windowSize;
+                flux.push(energy);
+            }
+            
+            // Smooth the flux
+            const smoothed = [];
+            const smoothWindow = 3;
+            for (let i = 0; i < flux.length; i++) {
+                let sum = 0;
+                let count = 0;
+                for (let j = Math.max(0, i - smoothWindow); j < Math.min(flux.length, i + smoothWindow + 1); j++) {
+                    sum += flux[j];
+                    count++;
+                }
+                smoothed.push(sum / count);
+            }
+            
+            // Calculate adaptive threshold
+            const localWindow = 10;
+            const onsets = [];
+            
+            for (let i = localWindow; i < smoothed.length - localWindow; i++) {
+                let localMean = 0;
+                for (let j = i - localWindow; j < i; j++) {
+                    localMean += smoothed[j];
+                }
+                localMean /= localWindow;
+                
+                const localThreshold = localMean * threshold;
+                
+                // Detect peak
+                if (smoothed[i] > localThreshold && 
+                    smoothed[i] > smoothed[i - 1] && 
+                    smoothed[i] > smoothed[i + 1]) {
+                    
+                    const onsetTime = (i * hopSize) / sampleRate;
+                    
+                    // Check minimum gap
+                    if (onsets.length === 0 || (onsetTime - onsets[onsets.length - 1].start) > minGap) {
+                        // Find end of event (where energy drops significantly)
+                        let endIdx = i + 1;
+                        while (endIdx < smoothed.length && smoothed[endIdx] > localMean * 0.5) {
+                            endIdx++;
+                        }
+                        const endTime = (endIdx * hopSize) / sampleRate;
+                        
+                        onsets.push({
+                            start: onsetTime,
+                            end: endTime,
+                            duration: endTime - onsetTime
+                        });
+                    }
+                }
+            }
+            
+            return onsets;
+        }
+        
+        function displayResults(onsets) {
+            onsetList.innerHTML = '';
+            onsetCount.textContent = onsets.length;
+            
+            onsets.forEach((onset, idx) => {
+                const item = document.createElement('div');
+                item.className = 'onset-item';
+                item.innerHTML = `
+                    <div>
+                        <div class="onset-label">Event ${idx + 1}</div>
+                        <div class="onset-value">${onset.start.toFixed(3)}s</div>
+                    </div>
+                    <div>
+                        <div class="onset-label">End Time</div>
+                        <div class="onset-value">${onset.end.toFixed(3)}s</div>
+                    </div>
+                    <div>
+                        <div class="onset-label">Duration</div>
+                        <div class="onset-value">${onset.duration.toFixed(3)}s</div>
+                    </div>
+                `;
+                onsetList.appendChild(item);
+            });
+        }
+        
+        exportBtn.addEventListener('click', () => {
+            const dataStr = JSON.stringify(detectedOnsets, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'onsets.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+        
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = 'status';
+            status.style.background = type === 'error' ? '#ffe0e0' : 
+                                      type === 'success' ? '#e0ffe0' : '#f0f4ff';
+            status.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
