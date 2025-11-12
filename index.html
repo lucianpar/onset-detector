@@ -192,8 +192,9 @@
         
         <div class="controls">
             <div class="control-group">
-                <label for="threshold">Sensitivity: <span id="thresholdValue">1.5</span></label>
+                <label for="threshold">Sensitivity: <span id="thresholdValue">1.5</span>x</label>
                 <input type="range" id="threshold" min="0.5" max="3" step="0.1" value="1.5">
+                <span style="color: #999; font-size: 12px;" id="sensitivityHint">Balanced</span>
             </div>
             <div class="control-group">
                 <label for="minGap">Min Gap (ms): <span id="minGapValue">50</span></label>
@@ -225,13 +226,28 @@
         const minGapSlider = document.getElementById('minGap');
         const thresholdValue = document.getElementById('thresholdValue');
         const minGapValue = document.getElementById('minGapValue');
+        const sensitivityHint = document.getElementById('sensitivityHint');
+        
+        console.log('Sensitivity hint element:', sensitivityHint);
         
         let audioBuffer = null;
         let detectedOnsets = [];
         
         // Update slider values
         thresholdSlider.addEventListener('input', (e) => {
-            thresholdValue.textContent = e.target.value;
+            const val = parseFloat(e.target.value);
+            thresholdValue.textContent = val;
+            
+            // Update hint text
+            if (sensitivityHint) {
+                if (val < 1.0) {
+                    sensitivityHint.textContent = 'More sensitive - detects subtle onsets';
+                } else if (val < 2.0) {
+                    sensitivityHint.textContent = 'Balanced - most drum hits & transients';
+                } else {
+                    sensitivityHint.textContent = 'Less sensitive - only strong attacks';
+                }
+            }
         });
         
         minGapSlider.addEventListener('input', (e) => {
